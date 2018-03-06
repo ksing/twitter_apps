@@ -1,7 +1,7 @@
 import os
 import sys
 from time import sleep
-from HTMLParser import HTMLParser
+import html
 cur_dir = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(os.path.join(cur_dir, '../utils'))
 from twitter_api import setup_api
@@ -16,7 +16,6 @@ import sqlite3 as sql
 home = os.environ.get('HOME', '/home/fairfrog/')
 logger = get_logger(home, 'old_tweets')
 #logger.setLevel(DEBUG)
-parser = HTMLParser()
 now = arrow.now()
 
 
@@ -40,8 +39,8 @@ def post_old_tweet(api):
     now = arrow.now()
     shuffle(statuses)
     for status in statuses:
-        tweet = parser.unescape(status['Text'])
-        tweet_id = parser.unescape(status['Id'])
+        tweet = html.unescape(status['Text'])
+        tweet_id = html.unescape(status['Id'])
         tweet_date = arrow.get(status['Tweet_Date'])
         if len(tweet) <= 180:
             if (now - tweet_date).days > 30:
@@ -73,8 +72,8 @@ def post_appeal(api):
     now = arrow.now()
     shuffle(statuses)
     for status in statuses:
-        tweet = parser.unescape(status['Text'])
-        tweet_id = parser.unescape(status['Id'])
+        tweet = html.unescape(status['Text'])
+        tweet_id = html.unescape(status['Id'])
         tweet_date = arrow.get(status['Tweet_Date'])
         if len(tweet) <= 180:
             if (now - tweet_date).days > 10:

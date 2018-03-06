@@ -47,7 +47,7 @@ def follow_desired_divas(api):
 
 
 def remove_unfollowers(api, current_followers):
-    with open(os.path.join(cur_dir, 'followers_list.txt'), 'rU') as f:
+    with open(os.path.join(home, 'followers_list.txt'), 'rU') as f:
         followers_list = set([fol_id.strip() for fol_id in f.readlines()])
     for unfollower in followers_list - current_followers:
         try:
@@ -67,6 +67,6 @@ if __name__ == "__main__":
                 format(me.name, me.location, me.friends_count, me.followers_count))
     followers = get_followers(api)
     remove_unfollowers(api, followers)
-    with open(os.path.join(cur_dir, 'followers_list.txt'), 'w') as f:
+    with open(os.path.join(home, 'followers_list.txt'), 'w') as f:
         f.write('\n'.join(followers))
     # follow_desired_divas(api)
