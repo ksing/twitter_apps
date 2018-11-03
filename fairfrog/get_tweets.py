@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import sys
 cur_dir = os.path.abspath(os.path.dirname(__file__))
@@ -15,29 +16,29 @@ api = setup_api(home)
 me = api.me()
 
 
-with open(cur_dir + '/fairfrog_tweets.csv', 'w') as f:
+with open(cur_dir + '/fairfrog_tweets2.csv', 'wt') as f:
     csvwriter = writer(f)
     for my_tweet in Cursor(api.user_timeline, screen_name=me.screen_name, tweet_mode="extended" ).items():
         if not hasattr(my_tweet, 'retweeted_status'):
             try:
                 csvwriter.writerow([my_tweet.id, my_tweet.created_at.strftime('%Y-%m-%d %H:%M'),
                                     my_tweet.retweet_count, my_tweet.favorite_count,
-                                    my_tweet.full_text.encode('UTF-8'),
-                                    ','.join([tag.get('text').encode('UTF-8') for tag in
+                                    my_tweet.full_text,
+                                    ','.join([tag.get('text') for tag in
                                                 my_tweet.entities.get('hashtags')]),
-                                    ','.join([url.get('url').encode('UTF-8') for url in
+                                    ','.join([url.get('url') for url in
                                                 my_tweet.entities.get('urls')]),
-                                    ','.join([url.get(u'expanded_url').encode('UTF-8') for url in
+                                    ','.join([url.get(u'expanded_url') for url in
                                                 my_tweet.entities.get('urls')])])
             except Exception as e:
-                print e
-                print my_tweet.id_str
+                print(e)
+                print(my_tweet.id_str)
                 csvwriter.writerow([my_tweet.id, my_tweet.created_at.strftime('%Y-%m-%d %H:%M'),
                                     my_tweet.retweet_count, my_tweet.favorite_count,
-                                    ','.join([tag.get('text').encode('UTF-8') for tag in
-                                                my_tweet.entities.get('hashtags')]),
-                                    ','.join([url.get('url').encode('UTF-8') for url in
-                                                my_tweet.entities.get('urls')]),
-                                    ','.join([url.get(u'expanded_url').encode('UTF-8') for url in
-                                                my_tweet.entities.get('urls')])])
+                                    ','.join([tag.get('text') for tag in
+                                              my_tweet.entities.get('hashtags')]),
+                                    ','.join([url.get('url') for url in
+                                              my_tweet.entities.get('urls')]),
+                                    ','.join([url.get(u'expanded_url') for url in
+                                              my_tweet.entities.get('urls')])])
                 continue

@@ -1,7 +1,7 @@
 import os
 import sys
-from time import sleep
 import html
+from time import sleep
 cur_dir = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(os.path.join(cur_dir, '../utils'))
 from twitter_api import setup_api

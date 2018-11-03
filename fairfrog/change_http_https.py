@@ -28,17 +28,17 @@ def get_text_url(link, row):
     new_url = redirected_url.rpartition('?')[0]
     if 'fairfrog.nl/#!/products' in new_url:
         heading = driver.find_element_by_xpath('//div[contains(@class, "product-block")]//h4')
-        print heading.text,
+        print(heading.text, end=' ')
         if heading.text.split('>')[0]:
             short_url = get_short_url(new_url)
             row['Text'] = row['Text'].replace(row['url'], short_url)
-            print row['Id'], len(row['Text'])
+            print(row['Id'], len(row['Text']))
             row['url'] = short_url
             row['expanded_url'] = new_url
             #tweets.append(row)
             writer.writerow(row)
         else:
-            print row['Id'], new_url
+            print(row['Id'], new_url)
     else:
         # tweets.append(row)
         writer.writerow(row)
