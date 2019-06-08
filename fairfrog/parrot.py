@@ -1,9 +1,13 @@
+#!/usr/bin/env python3
+import html
 import math
 import datetime as dt
 import os
 import re
 import sqlite3 as sql
+import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Set
 from time import sleep
 
@@ -12,25 +16,34 @@ import requests
 from loguru import logger
 from lxml import etree as ET
 
-from ..utils.twitter_api import setup_api
-from ..utils.url_shortener import get_short_url
+CUR_DIR = os.path.dirname(__file__)
+sys.path.append(os.path.join(CUR_DIR, '../utils/'))
+from twitter_api import setup_api
+from url_shortener import get_short_url
 
 
 BLOG_RSS_URL = 'https://fairfrog.nl/?feed=fairss'
+FAIRFROG_URL = 'https://fairfrog.nl/#!/products/{webshop}/{title}/{Id}/'
 PRODUCT_API_URL = os.getenv('PRODUCT_API_URL')
 PARSER = ET.XMLParser(
     ns_clean=True, remove_blank_text=True, remove_comments=True, strip_cdata=True, encoding='utf-8'
 )
-TODAY = dt.date.today()
+TODAY = dt.datetime.today()
 MAX_NUM_BLOGS = 3
 TOTAL_NUM_TWEETS = 5
+TWEET_LENGTH = 280
 NUM_HOURS = 22 - 8
 HOME = os.getenv('HOME', '/home/fairfrog')
-CUR_DIR = os.path.dirname(__file__)
 INSERT_BLOG_QUERY = """INSERT INTO FairFrog_Blogs
     (Title, Url, Publish_Date, Description, Image, Tags, Author, Last_Update)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
+
+
+@lru_cache(8)
+def get_api_config_settings(api):
+    config = api.configuration()
+    return config['characters_reserved_per_media'], config['short_url_length_https']
 
 
 def download_image_to_temp(image_url: str) -> str:
@@ -43,14 +56,16 @@ def download_image_to_temp(image_url: str) -> str:
 
 def upload_media_to_twitter(image_url: str, twitter) -> int:
     file_name = download_image_to_temp(image_url)
-    return twitter.media_upload(file_name)
+    media = twitter.media_upload(file_name)
+    os.remove(file_name)
+    return media
 
 
 @dataclass
 class Blog:
     title: str
     url: str
-    publish_date: dt.date
+    publish_date: dt.datetime
     description: str
     image_url: str
     tags: Set[str]
@@ -58,7 +73,11 @@ class Blog:
 
     @property
     def is_relevant(self):
-        return is_fibonacci_num((TODAY - self.publish_date).days)
+        return is_fibonacci_num(self.days_since_publish)
+
+    @property
+    def days_since_publish(self):
+        return (TODAY.date() - self.publish_date.date()).days
 
     def insert_in_database(self, cursor):
         cursor.execute(INSERT_BLOG_QUERY, (
@@ -68,33 +87,53 @@ class Blog:
         ))
 
     def tweet(self, twitter) -> None:
-        status = self.description + get_short_url(self.url) + '\n'
+        characters_reserved_per_media, short_url_length = get_api_config_settings(twitter)
+        short_url = get_short_url(self.url)
+        status = (f"{self.description} [Gemist sinds {self.days_since_publish} dagen] \n"
+                  f"{short_url}\n")
         for tag in self.tags:
-            if len(status + f'#{tag} ') < 280:
-                status += f'#{tag} '
-
-        twitter.update_status(status)
+            if (
+                len(status + f'#{tag} ') <
+                TWEET_LENGTH - characters_reserved_per_media - short_url_length + len(short_url)
+            ):
+                status += html.unescape(f'#{tag.replace(" ", "")} ')
+        twitter.update_status(status=status)
         logger.info('Tweeting blog: {}, originally published on {}',
                     self.title, self.publish_date.strftime('%Y-%m-%d'))
+        logger.info(status)
 
 
 @dataclass
 class Product:
+    Id: int
     title: str
     webshop_name: str
-    url: str
     description: str
     image_url: str
     tags: List[str]
 
+    @property
+    def url(self):
+        return FAIRFROG_URL.format(
+            webshop=self._urlify(self.webshop_name), title=self._urlify(self.title), Id=self.Id
+        )
+
+    @staticmethod
+    def _urlify(text: str) -> str:
+        return text.lower().replace(' ', '_')
+
     def tweet(self, twitter) -> None:
-        status = (f'Check out onze mooie {self.title} van {self.webshop_name} op'
-                  f' {get_short_url(self.url)}\n')
-        media_id = upload_media_to_twitter(self.image_url, twitter)
+        characters_reserved_per_media, short_url_length = get_api_config_settings(twitter)
+        short_url = get_short_url(self.url)
+        status = f'Check out onze mooie {self.title} van {self.webshop_name} op {short_url}\n'
+        media = upload_media_to_twitter(self.image_url, twitter)
         for tag in self.tags:
-            if len(status + f'#{tag} ') < 280:
-                status += f'#{tag} '
-        twitter.update_status(status=status, media_ids=[media_id])
+            if (
+                len(status + f'#{tag} ') <
+                TWEET_LENGTH - characters_reserved_per_media - short_url_length + len(short_url)
+            ):
+                status += html.unescape(f'#{tag.replace(" ", "")} ')
+        twitter.update_status(status=status, media_ids=[media.media_id])
         logger.info('Tweeting about the product')
         return
 
@@ -141,19 +180,22 @@ def get_relevant_blogs(blogs: List['Blog']) -> List['Blog']:
 
 
 def get_site_products(product_url: str, num_products: int) -> List['Product']:
-    response = requests.get(product_url + f'/get_products/{num_products}')
+    np.random.seed(TODAY.toordinal())
+    response = requests.get(product_url + f'/get_products/')
     products = response.json()['products_list']
+    np.random.shuffle(products)
     return [
         Product(
-            title=product['title'], webshop_name=product['webshop_name'], url=product['url'],
-            description=product['meta_text'], image_url=product['images'][0], tags=product['tags']
-        ) for product in products
+            Id=product['Id'], title=product['title'], webshop_name=product['webshop_name'],
+            description=product['meta_text'], image_url=product['images'][0],
+            tags=product['categories']
+        ) for product in products[:num_products]
     ]
 
 
 def get_random_intervals(num_intervals):
-    np.random.seed(TODAY)
-    for i in np.random.dirichlet(np.ones(num_intervals), 1):
+    np.random.seed(TODAY.toordinal())
+    for i in np.random.dirichlet(np.ones(num_intervals), 1)[0]:
         yield i
 
 
@@ -171,7 +213,7 @@ def update_blogs_database(all_blogs: List['Blog']):
         cursor = conn.cursor()
         create_blog_table(cursor)
         current_blog_urls = [
-            url.lower() for url in cursor.execute('SELECT Url from FairFrog_Blogs')
+            url.lower() for id_, url in cursor.execute('SELECT Id, Url from FairFrog_Blogs')
         ]
         for blog in all_blogs:
             if blog.url not in current_blog_urls:
@@ -187,13 +229,18 @@ def main():
     products_to_tweet = get_site_products(
         product_url=PRODUCT_API_URL, num_products=TOTAL_NUM_TWEETS - len(blogs_to_tweet)
     )
-    twitter_api = setup_api(HOME)
+    twitter_api = setup_api()
     twitter_me = twitter_api.me()
     logger.info(
         "Name: {}\nLocation: {}\nFriends: {}\nFollowers: {}\n",
         twitter_me.name, twitter_me.location, twitter_me.friends_count, twitter_me.followers_count
     )
-    for post in np.random.choice(blogs_to_tweet + products_to_tweet):
-        interval = next(get_random_intervals(TOTAL_NUM_TWEETS))
-        sleep(interval * NUM_HOURS * 3600)
+    for post in np.random.permutation(blogs_to_tweet + products_to_tweet):
+        # interval = next(get_random_intervals(TOTAL_NUM_TWEETS))
+        # sleep(interval * NUM_HOURS * 3600)
         post.tweet(twitter_api)
+        sleep(5)
+
+
+if __name__ == '__main__':
+    main()

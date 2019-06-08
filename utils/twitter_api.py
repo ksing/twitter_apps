@@ -1,15 +1,18 @@
-from tweepy import OAuthHandler, API, Cursor
+import os
+from configparser import ConfigParser
+
+from tweepy import OAuthHandler, API
 from random import seed, shuffle
 import arrow
 
 
-def setup_api(home):
-    with open("{}/.twitter_keys".format(home), "rU") as f:
-        twitter_keys = dict(line.strip().split("=") for line in f)
-    ckey = twitter_keys.get("CKEY", "")
-    csecret = twitter_keys.get("CSECRET", "")
-    atoken = twitter_keys.get("ATOKEN", "")
-    asecret = twitter_keys.get("ASECRET", "")
+def setup_api(home=None):
+    config = ConfigParser()
+    config.read(os.path.expanduser('~/.key_data'))
+    ckey = config['Twitter'].get("CKEY", "")
+    csecret = config['Twitter'].get("CSECRET", "")
+    atoken = config['Twitter'].get("ATOKEN", "")
+    asecret = config['Twitter'].get("ASECRET", "")
     auth = OAuthHandler(ckey, csecret)
     auth.set_access_token(atoken, asecret)
     return API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=True, compression=True)
