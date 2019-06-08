@@ -236,10 +236,9 @@ def main():
         twitter_me.name, twitter_me.location, twitter_me.friends_count, twitter_me.followers_count
     )
     for post in np.random.permutation(blogs_to_tweet + products_to_tweet):
-        # interval = next(get_random_intervals(TOTAL_NUM_TWEETS))
-        # sleep(interval * NUM_HOURS * 3600)
         post.tweet(twitter_api)
-        sleep(5)
+        interval = next(get_random_intervals(TOTAL_NUM_TWEETS))
+        sleep(interval * NUM_HOURS * 3600)
 
 
 if __name__ == '__main__':
