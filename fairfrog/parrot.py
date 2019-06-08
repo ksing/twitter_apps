@@ -2,9 +2,8 @@ import math
 import datetime as dt
 import os
 import re
-import sys
+import sqlite3 as sql
 from dataclasses import dataclass
-from itertools import zip_longest
 from typing import List, Set
 from time import sleep
 
@@ -18,7 +17,7 @@ from ..utils.url_shortener import get_short_url
 
 
 BLOG_RSS_URL = 'https://fairfrog.nl/?feed=fairss'
-PRODUCT_API_URL = 'https://fairapp.pythonanywhere.com/get_products'
+PRODUCT_API_URL = os.getenv('PRODUCT_API_URL')
 PARSER = ET.XMLParser(
     ns_clean=True, remove_blank_text=True, remove_comments=True, strip_cdata=True, encoding='utf-8'
 )
@@ -27,6 +26,24 @@ MAX_NUM_BLOGS = 3
 TOTAL_NUM_TWEETS = 5
 NUM_HOURS = 22 - 8
 HOME = os.getenv('HOME', '/home/fairfrog')
+CUR_DIR = os.path.dirname(__file__)
+INSERT_BLOG_QUERY = """INSERT INTO FairFrog_Blogs
+    (Title, Url, Publish_Date, Description, Image, Tags, Author, Last_Update)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+"""
+
+
+def download_image_to_temp(image_url: str) -> str:
+    response = requests.get(image_url, allow_redirects=True)
+    temp_filename = '/tmp/' + image_url.rpartition('/')[2].partition('?')[0]
+    with open(temp_filename, 'wb') as f:
+        f.write(response.content)
+    return temp_filename
+
+
+def upload_media_to_twitter(image_url: str, twitter) -> int:
+    file_name = download_image_to_temp(image_url)
+    return twitter.media_upload(file_name)
 
 
 @dataclass
@@ -43,20 +60,41 @@ class Blog:
     def is_relevant(self):
         return is_fibonacci_num((TODAY - self.publish_date).days)
 
+    def insert_in_database(self, cursor):
+        cursor.execute(INSERT_BLOG_QUERY, (
+            self.title, self.url, self.publish_date.strftime('%Y-%m-%d'), self.description[:512],
+            self.image_url, ','.join(self.tags), self.author,
+            TODAY.strftime('%Y-%m-%d')
+        ))
+
     def tweet(self, twitter) -> None:
+        status = self.description + get_short_url(self.url) + '\n'
+        for tag in self.tags:
+            if len(status + f'#{tag} ') < 280:
+                status += f'#{tag} '
+
+        twitter.update_status(status)
         logger.info('Tweeting blog: {}, originally published on {}',
                     self.title, self.publish_date.strftime('%Y-%m-%d'))
-        return
 
 
 @dataclass
 class Product:
-    name: str
+    title: str
+    webshop_name: str
     url: str
     description: str
     image_url: str
+    tags: List[str]
 
     def tweet(self, twitter) -> None:
+        status = (f'Check out onze mooie {self.title} van {self.webshop_name} op'
+                  f' {get_short_url(self.url)}\n')
+        media_id = upload_media_to_twitter(self.image_url, twitter)
+        for tag in self.tags:
+            if len(status + f'#{tag} ') < 280:
+                status += f'#{tag} '
+        twitter.update_status(status=status, media_ids=[media_id])
         logger.info('Tweeting about the product')
         return
 
@@ -102,8 +140,15 @@ def get_relevant_blogs(blogs: List['Blog']) -> List['Blog']:
     return [blog for blog in blogs if blog.is_relevant][:MAX_NUM_BLOGS]
 
 
-def get_site_products(product_sitemap: str) -> List['Product']:
-    return []
+def get_site_products(product_url: str, num_products: int) -> List['Product']:
+    response = requests.get(product_url + f'/get_products/{num_products}')
+    products = response.json()['products_list']
+    return [
+        Product(
+            title=product['title'], webshop_name=product['webshop_name'], url=product['url'],
+            description=product['meta_text'], image_url=product['images'][0], tags=product['tags']
+        ) for product in products
+    ]
 
 
 def get_random_intervals(num_intervals):
@@ -112,9 +157,32 @@ def get_random_intervals(num_intervals):
         yield i
 
 
+def create_blog_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS FairFrog_Blogs
+        (Id INTEGER PRIMARY KEY AUTOINCREMENT, Title VARCHAR(256), Url VARCHAR(128),
+         Publish_Date VARCHAR(16), Description VARCHAR(512), Image VARCHAR(128),
+         Tags VARCHAR(128), Author VARCHAR(64), Last_Update VARCHAR(16))
+    """)
+
+
+def update_blogs_database(all_blogs: List['Blog']):
+    with sql.connect(os.path.join(CUR_DIR, 'blogs.db')) as conn:
+        cursor = conn.cursor()
+        create_blog_table(cursor)
+        current_blog_urls = [
+            url.lower() for url in cursor.execute('SELECT Url from FairFrog_Blogs')
+        ]
+        for blog in all_blogs:
+            if blog.url not in current_blog_urls:
+                blog.insert_in_database(cursor)
+        conn.commit()
+        cursor.close()
+
+
 def main():
     all_blogs = get_blogs(rss_feed_url=BLOG_RSS_URL)
-    # update_blogs_database(all_blogs)
+    update_blogs_database(all_blogs)
     blogs_to_tweet = get_relevant_blogs(all_blogs)
     products_to_tweet = get_site_products(
         product_url=PRODUCT_API_URL, num_products=TOTAL_NUM_TWEETS - len(blogs_to_tweet)
