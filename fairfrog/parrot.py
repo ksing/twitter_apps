@@ -13,11 +13,11 @@ from time import sleep
 
 import numpy as np
 import requests
-from loguru import logger
 from lxml import etree as ET
 
 CUR_DIR = os.path.dirname(__file__)
 sys.path.append(os.path.join(CUR_DIR, '../utils/'))
+from set_logger import get_logger
 from twitter_api import setup_api
 from url_shortener import get_short_url
 
@@ -38,6 +38,7 @@ INSERT_BLOG_QUERY = """INSERT INTO FairFrog_Blogs
     (Title, Url, Publish_Date, Description, Image, Tags, Author, Last_Update)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
+logger = get_logger(HOME, f'parrot_{TODAY}', 'Parrot')
 
 
 @lru_cache(8)
