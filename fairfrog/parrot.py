@@ -38,7 +38,7 @@ INSERT_BLOG_QUERY = """INSERT INTO FairFrog_Blogs
     (Title, Url, Publish_Date, Description, Image, Tags, Author, Last_Update)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
-logger = get_logger(HOME, f'parrot_{TODAY}', 'Parrot')
+logger = get_logger(HOME, f'parrot_{TODAY.date()}', 'Parrot')
 
 
 @lru_cache(8)
@@ -60,6 +60,38 @@ def upload_media_to_twitter(image_url: str, twitter) -> int:
     media = twitter.media_upload(file_name)
     os.remove(file_name)
     return media
+
+
+def _is_perfect_square(x: int) -> bool:
+    sqrt = int(math.sqrt(x))
+    return sqrt ** 2 == x
+
+
+def is_fibonacci_num(x: int) -> bool:
+    return _is_perfect_square(5 * x * x + 4) or _is_perfect_square(5 * x * x - 4)
+
+
+def add_hashtags(status, tags, url_length, twitter_api, media=False):
+    characters_reserved_per_media, short_url_length = get_api_config_settings(twitter_api)
+    for tag in tags:
+        if (
+            len(status + f'#{tag} ') <
+            TWEET_LENGTH - characters_reserved_per_media * media - short_url_length + url_length
+        ):
+            status += html.unescape(f'#{tag.replace(" ", "")} ')
+    return status
+
+
+def send_tweet(twitter, status, media=None):
+    try:
+        if media is not None:
+            tweet = twitter.update_status(status=status, media_ids=[media.media_id])
+        else:
+            tweet = twitter.update_status(status=status)
+        logger.info('Tweeted with the id %s at %s, with text: %s',
+                    tweet._json['id_str'], tweet._json['created_at'], tweet._json['text'])
+    except Exception as e:
+        logger.warning('Could not tweet %s because: %s', tweet, e)
 
 
 @dataclass
@@ -88,20 +120,13 @@ class Blog:
         ))
 
     def tweet(self, twitter) -> None:
-        characters_reserved_per_media, short_url_length = get_api_config_settings(twitter)
         short_url = get_short_url(self.url)
         status = (f"{self.description} [Gemist sinds {self.days_since_publish} dagen] \n"
                   f"{short_url}\n")
-        for tag in self.tags:
-            if (
-                len(status + f'#{tag} ') <
-                TWEET_LENGTH - characters_reserved_per_media - short_url_length + len(short_url)
-            ):
-                status += html.unescape(f'#{tag.replace(" ", "")} ')
-        twitter.update_status(status=status)
-        logger.info('Tweeting blog: {}, originally published on {}',
+        status = add_hashtags(status, self.tags, len(short_url), twitter)
+        logger.info('Tweeting blog: %s, originally published on %s',
                     self.title, self.publish_date.strftime('%Y-%m-%d'))
-        logger.info(status)
+        send_tweet(twitter, status)
 
 
 @dataclass
@@ -124,28 +149,12 @@ class Product:
         return text.lower().replace(' ', '_')
 
     def tweet(self, twitter) -> None:
-        characters_reserved_per_media, short_url_length = get_api_config_settings(twitter)
         short_url = get_short_url(self.url)
-        status = f'Check out onze mooie {self.title} van {self.webshop_name} op {short_url}\n'
         media = upload_media_to_twitter(self.image_url, twitter)
-        for tag in self.tags:
-            if (
-                len(status + f'#{tag} ') <
-                TWEET_LENGTH - characters_reserved_per_media - short_url_length + len(short_url)
-            ):
-                status += html.unescape(f'#{tag.replace(" ", "")} ')
-        twitter.update_status(status=status, media_ids=[media.media_id])
-        logger.info('Tweeting about the product')
-        return
-
-
-def _is_perfect_square(x: int) -> bool:
-    sqrt = int(math.sqrt(x))
-    return sqrt ** 2 == x
-
-
-def is_fibonacci_num(x: int) -> bool:
-    return _is_perfect_square(5 * x * x + 4) or _is_perfect_square(5 * x * x - 4)
+        status = f'Check out onze mooie {self.title} van {self.webshop_name} op {short_url}\n'
+        status = add_hashtags(status, self.tags, len(short_url), twitter, media=True)
+        logger.info('Tweeting about the product: %s from %s', self.title, self.webshop_name)
+        send_tweet(twitter, status, media)
 
 
 def get_blogs(rss_feed_url: str) -> List['Blog']:
@@ -233,13 +242,13 @@ def main():
     twitter_api = setup_api()
     twitter_me = twitter_api.me()
     logger.info(
-        "Name: {}\nLocation: {}\nFriends: {}\nFollowers: {}\n",
+        "Name: %s\nLocation: %s\nFriends: %s\nFollowers: %s\n",
         twitter_me.name, twitter_me.location, twitter_me.friends_count, twitter_me.followers_count
     )
     for post in np.random.permutation(blogs_to_tweet + products_to_tweet):
-        post.tweet(twitter_api)
         interval = next(get_random_intervals(TOTAL_NUM_TWEETS))
         sleep(interval * NUM_HOURS * 3600)
+        post.tweet(twitter_api)
 
 
 if __name__ == '__main__':
