@@ -48,7 +48,10 @@ def get_api_config_settings(api):
 
 
 def download_image_to_temp(image_url: str) -> str:
-    response = requests.get(image_url, allow_redirects=True)
+    try:
+        response = requests.get(image_url, allow_redirects=True)
+    except requests.exceptions.MissingSchema:
+        response = requests.get('http:' + image_url, allow_redirects=True)
     temp_filename = '/tmp/' + image_url.rpartition('/')[2].partition('?')[0]
     with open(temp_filename, 'wb') as f:
         f.write(response.content)
@@ -151,7 +154,7 @@ class Product:
     def tweet(self, twitter) -> None:
         short_url = get_short_url(self.url)
         media = upload_media_to_twitter(self.image_url, twitter)
-        status = (f'Check out een mooie product van onze collectie: '
+        status = (f'Check out dit mooi product uit onze collectie: '
                   f'{self.title} van {self.webshop_name} op {short_url}\n')
         status = add_hashtags(status, self.tags, len(short_url), twitter, media=True)
         logger.info('Tweeting about the product: %s from %s', self.title, self.webshop_name)
@@ -248,6 +251,7 @@ def main():
     )
     for post in np.random.permutation(blogs_to_tweet + products_to_tweet):
         interval = next(get_random_intervals(TOTAL_NUM_TWEETS))
+        logger.info(f'Sleeping for {interval * NUM_HOURS * 3600: 0.2f} seconds')
         sleep(interval * NUM_HOURS * 3600)
         post.tweet(twitter_api)
 
