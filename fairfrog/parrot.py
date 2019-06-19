@@ -151,7 +151,8 @@ class Product:
     def tweet(self, twitter) -> None:
         short_url = get_short_url(self.url)
         media = upload_media_to_twitter(self.image_url, twitter)
-        status = f'Check out onze mooie {self.title} van {self.webshop_name} op {short_url}\n'
+        status = (f'Check out een mooie product van onze collectie: '
+                  f'{self.title} van {self.webshop_name} op {short_url}\n')
         status = add_hashtags(status, self.tags, len(short_url), twitter, media=True)
         logger.info('Tweeting about the product: %s from %s', self.title, self.webshop_name)
         send_tweet(twitter, status, media)
