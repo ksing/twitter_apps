@@ -1,16 +1,28 @@
-import json
+import os
+from configparser import ConfigParser
 
 import requests
-from decouple import config
 
-api_key = config("GOOGLE_KEY")
-url = "https://www.googleapis.com/urlshortener/v1/url?key={}".format(api_key)
+
+def get_group_guid(headers):
+    r = requests.get('https://api-ssl.bitly.com/v4/groups', headers=headers)
+    if r.ok:
+        return r.json()['groups'][0]['guid']
 
 
 def get_short_url(long_url):
-    headers = {"content-type": "application/json"}
-    r = requests.post(url, data=json.dumps({"longUrl": long_url}), headers=headers)
-    return r.json().get("id", "")
+    config = ConfigParser()
+    config.read(os.path.expanduser('~/.key_data'))
+    access_token = config['BitLy'].get("ACCESS_TOKEN")
+    url = "https://api-ssl.bitly.com/v4/shorten"
+    headers = {
+        "content-type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json"
+    }
+    group_guid = get_group_guid(headers)
+    r = requests.post(url, json={"long_url": long_url, "group_guid": group_guid}, headers=headers)
+    return r.json().get("link")
 
 
 if __name__ == "__main__":
