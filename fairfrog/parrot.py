@@ -28,9 +28,9 @@ PRODUCT_API_URL = os.getenv('PRODUCT_API_URL')
 PARSER = ET.XMLParser(
     ns_clean=True, remove_blank_text=True, remove_comments=True, strip_cdata=True, encoding='utf-8'
 )
-TODAY = dt.datetime.today()
+TODAY = dt.datetime.now()
 MAX_NUM_BLOGS = 3
-TOTAL_NUM_TWEETS = 5
+TOTAL_NUM_TWEETS = 6
 TWEET_LENGTH = 280
 NUM_HOURS = 22 - 8
 HOME = os.getenv('HOME', '/home/fairfrog')
