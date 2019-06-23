@@ -249,8 +249,9 @@ def main():
         "Name: %s\nLocation: %s\nFriends: %s\nFollowers: %s\n",
         twitter_me.name, twitter_me.location, twitter_me.friends_count, twitter_me.followers_count
     )
+    g = get_random_intervals(TOTAL_NUM_TWEETS)
     for post in np.random.permutation(blogs_to_tweet + products_to_tweet):
-        interval = next(get_random_intervals(TOTAL_NUM_TWEETS))
+        interval = next(g)
         logger.info(f'Sleeping for {interval * NUM_HOURS * 3600: 0.2f} seconds')
         sleep(interval * NUM_HOURS * 3600)
         post.tweet(twitter_api)
