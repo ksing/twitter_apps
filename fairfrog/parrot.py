@@ -39,6 +39,7 @@ INSERT_BLOG_QUERY = """INSERT INTO FairFrog_Blogs
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 """
 logger = get_logger(HOME, f'parrot_{TODAY.date()}', 'Parrot')
+PRODUCT_INTROS = ['Check out dit mooie product uit onze collectie', ]
 
 
 @lru_cache(8)
@@ -53,6 +54,9 @@ def download_image_to_temp(image_url: str) -> str:
     except requests.exceptions.MissingSchema:
         response = requests.get('http:' + image_url, allow_redirects=True)
     temp_filename = '/tmp/' + image_url.rpartition('/')[2].partition('?')[0]
+    name, extension = os.path.splitext(temp_filename)
+    if not extension:
+        temp_filename += '.jpg'
     with open(temp_filename, 'wb') as f:
         f.write(response.content)
     return temp_filename
@@ -154,7 +158,7 @@ class Product:
     def tweet(self, twitter) -> None:
         short_url = get_short_url(self.url)
         media = upload_media_to_twitter(self.image_url, twitter)
-        status = (f'Check out dit mooi product uit onze collectie: '
+        status = (f'{np.random.choice(PRODUCT_INTROS)}: '
                   f'{self.title} van {self.webshop_name} op {short_url}\n')
         status = add_hashtags(status, self.tags, len(short_url), twitter, media=True)
         logger.info('Tweeting about the product: %s from %s', self.title, self.webshop_name)
